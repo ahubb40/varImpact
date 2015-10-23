@@ -1,0 +1,35 @@
+source('~/Dropbox (UC Berkeley Biostat)/hubbardlap/Lithum/R/Lithium2newSHT.R', chdir = TRUE)
+1.96^2
+1.96^6
+10^6
+0.025/100000
+qnorm(2.5e-07)
+1-qnorm(2.5e-07)
+qnorm(1-2.5e-07)
+(qnorm(1-2.5e-07))^6
+xx=c(100,1000,10000,100000,1000000)
+xx=c(100,1000,10000,100000,1000000)#
+qz=qnorm(1-0.025/xx)#
+nn=qz^6
+plot(xx,nn,log="x")
+plot(xx,nn,log="x",xlab="Number of comparisons",ylab="Sample Size Required")
+xx=c(100,1000,10000,100000,1000000)
+xx
+qz
+1-0.025/xx
+qnorm(1-0.025/xx)
+1-0.025/xx[5]
+qnorm(1)
+xx=c(100,1000,10000,100000,500000)#
+qz=qnorm(1-0.025/xx)#
+nn=qz^6#
+plot(xx,nn,log="x",xlab="Number of comparisons",ylab="Sample Size Required")
+qz
+1-0.025/xx
+qnorm(1-0.025/xx[5])
+pnorm(5.33)
+pnorm(5.3)
+q*()
+q()
+setwd("~/Dropbox (UC Berkeley Biostat)/hubbardlap/CV Targeted Parameter/R/varImpact")
+list.files()
