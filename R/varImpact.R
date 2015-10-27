@@ -40,7 +40,8 @@
 #' minimum cell size on validation sample of A vs. Y
 #' and implementing CV-TMLE (minCell), adding Imports statement
 #' in the DESCRIPTION file, making examples, putting authors
-#' and references and see also's.
+#' and references and see also's.  Allow reporting of results that
+#' randomly do not have estimates for some of validation samples.
 #' }
 #' 
 #' @param Y outcome of interest (numeric vector)
@@ -296,24 +297,38 @@ corthres=0.8,dirout=NULL,miss.cut=0.5)
           incc= corAt < corthres & is.na(corAt)==F
           Wv=Wv[,incc]
           Wt=Wt[,incc]
-          #### Use HOPACH to reduce dimension of W to some level of tree
-          mydist<-as.matrix(distancematrix(t(Wt),d="cosangle",na.rm=T))
-          hopach.1<-hopach(t(Wt),dmat=mydist,mss="mean",verbose=FALSE)
-          nlvls=nchar(max(hopach.1$final$labels))
-          no<-trunc(mean(log10(hopach.1$final$labels)))
-          ### Find highest level of tree where minimum number of covariates is > ncov
-          lvl = 1:nlvls
-          ncv=NULL
-          for(ii in lvl) {ncv=c(ncv,length(unique(trunc(hopach.1$final$labels/10^(no-(ii-1))))))}
-          ncv=unique(ncv)
-          lev = min(min(nlvls,dim(Wt)[2]),min(lvl[ncv>=ncov]))
-          two.clust<-unique(trunc(hopach.1$final$labels/(10^(no-(lev-1)))))
-          md<-hopach.1$final$medoids
-          mm=md[,1]%in%two.clust
-          incc=md[mm,2]
-          Wtsht=Wt[,incc]
-          Wvsht=Wv[,incc]
-          deltat=as.numeric(is.na(Yt)==F & is.na(Atnew)==F)
+if(nw <=10) {
+  Wtsht=Wt
+  Wvsht=Wv
+}
+if(nw > 10) {
+  mydist<-as.matrix(distancematrix(t(Wt),d="cosangle",na.rm=T))
+  hopach.1<-try(hopach(t(Wt),dmat=mydist,mss="mean",verbose=FALSE),silent=TRUE)
+  if(class(hopach.1)=="try-error"){
+    hopach.1<-try(hopach(t(Wt),dmat=mydist,mss="med",verbose=FALSE),silent=TRUE)
+  }
+  if(class(hopach.1)=="try-error"){
+    Wtsht=Wt
+    Wvsht=Wv
+  }
+  if(class(hopach.1) != "try-error") {
+    nlvls=nchar(max(hopach.1$final$labels))
+    no<-trunc(mean(log10(hopach.1$final$labels)))
+    ### Find highest level of tree where minimum number of covariates is > ncov
+    lvl = 1:nlvls
+    ncv=NULL
+    for(ii in lvl) {ncv=c(ncv,length(unique(trunc(hopach.1$final$labels/10^(no-(ii-1))))))}
+    ncv=unique(ncv)
+    lev = min(min(nlvls,dim(Wt)[2]),min(lvl[ncv>=ncov]))
+    two.clust<-unique(trunc(hopach.1$final$labels/(10^(no-(lev-1)))))
+    md<-hopach.1$final$medoids
+    mm=md[,1]%in%two.clust
+    incc=md[mm,2]
+    Wtsht=Wt[,incc]
+    Wvsht=Wv[,incc]
+  }
+}
+deltat=as.numeric(is.na(Yt)==F & is.na(Atnew)==F)
           deltav=as.numeric(is.na(Yv)==F & is.na(Avnew)==F)
           vals=cats.cont[[i]]
           maxEY1=-100000
@@ -324,7 +339,7 @@ corthres=0.8,dirout=NULL,miss.cut=0.5)
           ICmax=NULL
           Atnew[is.na(Atnew)]=-1
           Avnew[is.na(Avnew)]=-1
-          if(min(table(Avnew,Yv)) <= minCell) {
+         if(min(table(Avnew[Avnew >= 0],Yv[Avnew >= 0])) <= minCell) {
             thetaV=c(thetaV,NA)
             varICV = c(varICV,NA)
             labV=rbind(labV,c(NA,NA))
@@ -386,6 +401,11 @@ corthres=0.8,dirout=NULL,miss.cut=0.5)
     out.put=out.put[lngth==6]
     vars=vars[lngth==6]
     factr=factr[lngth==6]
+    lngth2=sapply(out.put,function(x) length(na.omit(x[[1]])))
+    out.put=out.put[lngth2==V]
+    vars=vars[lngth2==V]
+    factr=factr[lngth2==V]
+
     tst=lapply(out.put, function(x) x[[3]])
     tst=do.call(rbind,tst)
     tot.na=function(x){sum(is.na(x))}
@@ -449,14 +469,18 @@ corthres=0.8,dirout=NULL,miss.cut=0.5)
     cons=apply(dir,1,length.uniq)
     
     consist= (cons==1 & pval.comp > 0.05)
-    
-    
-    procs<-c("Holm","BH")
-    res<-mt.rawp2adjp(pvalue,procs)
-    oo<-res$index
-    outres=data.frame(factor=factr[oo],theta[oo,],psi[oo],
-                      CI95[oo],res$adj,lbs[oo,],consist[oo])
-    
+procs<-c("Holm","BH")
+if(n > 1) {
+  res<-mt.rawp2adjp(pvalue,procs)
+  oo<-res$index
+  outres=data.frame(factor=factr[oo],theta[oo,],psi[oo],
+                    CI95[oo],res$adj,lbs[oo,],consist[oo])
+}
+if(n==1) {
+  outres=data.frame(factor=factr,theta,psi,
+                    CI95,rawp=pvalue,Holm=pvalue,BH=pvalue,lbs,consist)
+}
+
     outres=outres[is.na(outres[,"rawp"]) ==F,]
     names(outres)[1:5]=c("VarType","psiV1","psiV2","AvePsi","CI95")
     names(outres)[13]="Consistent"
@@ -681,32 +705,38 @@ corthres=0.8,dirout=NULL,miss.cut=0.5)
         Wt=Wt[,incc,drop=F]
         nw=dim(Wv)[2]
         ### Skip of number covariates < 10
-        if(nw <=10) {
-          Wtsht=Wt
-          Wvsht=Wv
-        }
-        #### Use HOPACH to reduce dimension of W to some level of tree
-        #      mydist<-as.matrix(distancematrix(t(Wt),d="cosangle",na.rm=T))
-        if(nw > 10) {
-          mydist<-distancematrix(t(Wt),d="cosangle",na.rm=T)
-          hopach.1<-hopach(t(Wt),dmat=mydist,mss="mean",verbose=FALSE)
-          nlvls=nchar(max(hopach.1$final$labels))
-          no<-trunc(mean(log10(hopach.1$final$labels)))
-          ### Find highest level of tree where minimum number of covariates is > ncov
-          lvl = 1:nlvls
-          ncv=NULL
-          for(ii in lvl) {ncv=c(ncv,length(unique(trunc(hopach.1$final$labels/10^(no-(ii-1))))))}
-          ncv=unique(ncv)
-          lev = min(min(nlvls,dim(Wt)[2]),min(lvl[ncv>=ncov]))
-          two.clust<-unique(trunc(hopach.1$final$labels/(10^(no-(lev-1)))))
-          md<-hopach.1$final$medoids
-          mm=md[,1]%in%two.clust
-          incc=md[mm,2]
-          #    if(sum(mm)==0){mm=rep(TRUE,dim(Wt)[2])}
-          Wtsht=Wt[,incc]
-          Wvsht=Wv[,incc]
-        }
-        deltat=as.numeric(is.na(Yt)==F & is.na(At)==F)
+if(nw <=10) {
+  Wtsht=Wt
+  Wvsht=Wv
+}
+if(nw > 10) {
+  mydist<-as.matrix(distancematrix(t(Wt),d="cosangle",na.rm=T))
+  hopach.1<-try(hopach(t(Wt),dmat=mydist,mss="mean",verbose=FALSE),silent=TRUE)
+  if(class(hopach.1)=="try-error"){
+    hopach.1<-try(hopach(t(Wt),dmat=mydist,mss="med",verbose=FALSE),silent=TRUE)
+  }
+  if(class(hopach.1)=="try-error"){
+    Wtsht=Wt
+    Wvsht=Wv
+  }
+  if(class(hopach.1) != "try-error") {
+    nlvls=nchar(max(hopach.1$final$labels))
+    no<-trunc(mean(log10(hopach.1$final$labels)))
+    ### Find highest level of tree where minimum number of covariates is > ncov
+    lvl = 1:nlvls
+    ncv=NULL
+    for(ii in lvl) {ncv=c(ncv,length(unique(trunc(hopach.1$final$labels/10^(no-(ii-1))))))}
+    ncv=unique(ncv)
+    lev = min(min(nlvls,dim(Wt)[2]),min(lvl[ncv>=ncov]))
+    two.clust<-unique(trunc(hopach.1$final$labels/(10^(no-(lev-1)))))
+    md<-hopach.1$final$medoids
+    mm=md[,1]%in%two.clust
+    incc=md[mm,2]
+    Wtsht=Wt[,incc]
+    Wvsht=Wv[,incc]
+  }
+}
+deltat=as.numeric(is.na(Yt)==F & is.na(At)==F)
         deltav=as.numeric(is.na(Yv)==F & is.na(Av)==F)
 #  To avoid crashing TMLE function just drop obs missing A or Y if the total number of missing is < 10
         if(sum(deltat==0)<10){
@@ -784,7 +814,7 @@ corthres=0.8,dirout=NULL,miss.cut=0.5)
           nV=c(nV,length(Yv)) 
         }
       }
-      list(EY1V,EY0V,thetaV,varICV,labV,nV)
+      list(EY1V,EY0V,thetaV,varICV,labV,nV,"factor")
       #print(data.frame(EY1V,EY0V,thetaV,varICV,labV,nV))
     }
     )
@@ -911,7 +941,7 @@ if(sum(deltat==0)<10){
           ICmax=NULL
           Atnew[is.na(Atnew)]=-1
           Avnew[is.na(Avnew)]=-1
-          if(min(table(Avnew,Yv)) <= minCell) {
+          if(min(table(Avnew[Avnew >= 0],Yv[Avnew >= 0])) <= minCell) {
             thetaV=c(thetaV,NA)
             varICV = c(varICV,NA)
             labV=rbind(labV,c(NA,NA))
@@ -956,10 +986,9 @@ if(sum(deltat==0)<10){
         }
       }
       #print(list(EY1V,EY0V,thetaV,varICV,labV,nV))
-      list(EY1V,EY0V,thetaV,varICV,labV,nV)
+      list(EY1V,EY0V,thetaV,varICV,labV,nV,"numeric")
     }
     )	
-    
     vars.cont=colnames(data.cont.dist)
     out.cont=out.put
     stf=c("vars.cont","out.cont")
@@ -978,6 +1007,12 @@ if(sum(deltat==0)<10){
     out.put=out.put[lngth==6]
     vars=vars[lngth==6]
     factr=factr[lngth==6]
+    ## Get rid of any variables that have a validation sample
+    ## with no estimates of variable importance
+    lngth2=sapply(out.put,function(x) length(na.omit(x[[1]])))
+    out.put=out.put[lngth2==V]
+    vars=vars[lngth2==V]
+    factr=factr[lngth2==V]
     tst=lapply(out.put, function(x) x[[3]])
     tst=do.call(rbind,tst)
     tot.na=function(x){sum(is.na(x))}
@@ -1008,7 +1043,7 @@ if(sum(deltat==0)<10){
       names(out)=paste("v.",lbel,rep(c("a_L","a_H"),2),sep="")
       out}
     tst=lapply(out.sht, function(x) x[[5]])
-    tst=lapply(tst,labs.get,fold=2)
+    tst=lapply(tst,labs.get,fold=V)
     lbs=do.call(rbind,tst)
     
     
@@ -1027,9 +1062,11 @@ if(sum(deltat==0)<10){
     #####  FOR levels (just make sure in same order)
     nc=sum(factr=="ordered")
     n=length(factr)
-    dir=NULL
     ### Ordered variables first
-    for(i in 1:V) {
+     cons=NULL
+     if(nc > 0) {
+     dir=NULL
+     for(i in 1:V) {
       ltemp=lbs[1:nc,i*2-1]
       xx=regexpr(",",ltemp)
       lwr=as.numeric(substr(ltemp,2,xx-1))
@@ -1041,8 +1078,9 @@ if(sum(deltat==0)<10){
     }
     length.uniq=function(x){length(unique(x))}
     cons=apply(dir,1,length.uniq)
-    
+     }
     #### Factors
+    if(n-nc > 0) {
     lwr=NULL
     uwr=NULL
     for(i in 1:V) {
@@ -1052,15 +1090,20 @@ if(sum(deltat==0)<10){
     conslwr=apply(lwr,1,length.uniq)
     consupr=apply(uwr,1,length.uniq)
     cons=c(cons,conslwr*consupr)
+    }
     consist= (cons==1 & pval.comp > 0.05)
-    
-    
+        
     procs<-c("Holm","BH")
+    if(n > 1) {
     res<-mt.rawp2adjp(pvalue,procs)
     oo<-res$index
     outres=data.frame(factor=factr[oo],theta[oo,],psi[oo],
                       CI95[oo],res$adj,lbs[oo,],consist[oo])
-    
+    }
+    if(n==1) {
+      outres=data.frame(factor=factr,theta,psi,
+                        CI95,rawp=pvalue,Holm=pvalue,BH=pvalue,lbs,consist)
+    }
     outres=outres[is.na(outres[,"rawp"]) ==F,]
     names(outres)[1:5]=c("VarType","psiV1","psiV2","AvePsi","CI95")
     names(outres)[13]="Consistent"
@@ -1240,31 +1283,38 @@ if(n.fac > 0 & n.num==0) {
       Wt=Wt[,incc,drop=F]
       nw=dim(Wv)[2]
       ### Skip of number covariates < 10
-      if(nw <=10) {
-        Wtsht=Wt
-        Wvsht=Wv
-      }
-      #### Use HOPACH to reduce dimension of W to some level of tree
-      #      mydist<-as.matrix(distancematrix(t(Wt),d="cosangle",na.rm=T))
-      if(nw > 10) {
-        mydist<-distancematrix(t(Wt),d="cosangle",na.rm=T)
-        hopach.1<-hopach(t(Wt),dmat=mydist,mss="mean",verbose=FALSE)
-        nlvls=nchar(max(hopach.1$final$labels))
-        no<-trunc(mean(log10(hopach.1$final$labels)))
-        ### Find highest level of tree where minimum number of covariates is > ncov
-        lvl = 1:nlvls
-        ncv=NULL
-        for(ii in lvl) {ncv=c(ncv,length(unique(trunc(hopach.1$final$labels/10^(no-(ii-1))))))}
-        ncv=unique(ncv)
-        lev = min(min(nlvls,dim(Wt)[2]),min(lvl[ncv>=ncov]))
-        two.clust<-unique(trunc(hopach.1$final$labels/(10^(no-(lev-1)))))
-        md<-hopach.1$final$medoids
-        mm=md[,1]%in%two.clust
-        incc=md[mm,2]
-        #    if(sum(mm)==0){mm=rep(TRUE,dim(Wt)[2])}
-        Wtsht=Wt[,incc]
-        Wvsht=Wv[,incc]
-      }
+if(nw <=10) {
+  Wtsht=Wt
+  Wvsht=Wv
+}
+if(nw > 10) {
+  mydist<-as.matrix(distancematrix(t(Wt),d="cosangle",na.rm=T))
+  hopach.1<-try(hopach(t(Wt),dmat=mydist,mss="mean",verbose=FALSE),silent=TRUE)
+  if(class(hopach.1)=="try-error"){
+    hopach.1<-try(hopach(t(Wt),dmat=mydist,mss="med",verbose=FALSE),silent=TRUE)
+  }
+  if(class(hopach.1)=="try-error"){
+    Wtsht=Wt
+    Wvsht=Wv
+  }
+  if(class(hopach.1) != "try-error") {
+    nlvls=nchar(max(hopach.1$final$labels))
+    no<-trunc(mean(log10(hopach.1$final$labels)))
+    ### Find highest level of tree where minimum number of covariates is > ncov
+    lvl = 1:nlvls
+    ncv=NULL
+    for(ii in lvl) {ncv=c(ncv,length(unique(trunc(hopach.1$final$labels/10^(no-(ii-1))))))}
+    ncv=unique(ncv)
+    lev = min(min(nlvls,dim(Wt)[2]),min(lvl[ncv>=ncov]))
+    two.clust<-unique(trunc(hopach.1$final$labels/(10^(no-(lev-1)))))
+    md<-hopach.1$final$medoids
+    mm=md[,1]%in%two.clust
+    incc=md[mm,2]
+    Wtsht=Wt[,incc]
+    Wvsht=Wv[,incc]
+  }
+}
+
       deltat=as.numeric(is.na(Yt)==F & is.na(At)==F)
       deltav=as.numeric(is.na(Yv)==F & is.na(Av)==F)
       levA=levels(At)
@@ -1347,6 +1397,11 @@ if(n.fac > 0 & n.num==0) {
   out.put=out.put[lngth==6]
   vars=vars[lngth==6]
   factr=factr[lngth==6]
+  lngth2=sapply(out.put,function(x) length(na.omit(x[[1]])))
+  out.put=out.put[lngth2==V]
+  vars=vars[lngth2==V]
+  factr=factr[lngth2==V]
+
   tst=lapply(out.put, function(x) x[[3]])
   tst=do.call(rbind,tst)
   tot.na=function(x){sum(is.na(x))}
